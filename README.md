@@ -66,7 +66,7 @@ The ATT system prompt is **not** a consent banner and does not replace one: Appl
 | `handle.getConsent()` | Current choice or `null`. |
 | `handle.hasConsent(category)` | `necessary`, `functional`, `analytics`, `marketing`. |
 | `handle.onChange(cb)` | Subscribe; returns an unsubscribe function. |
-| `handle.setConsent(partial)` | Record a choice yourself (own banner). Missing categories keep their value; persisted, listeners and `onConsent` notified; no-op if unchanged. |
+| `handle.setConsent(partial)` | Record a choice yourself (own banner). Missing categories keep their value; persisted, listeners and `onConsent` notified; no-op if unchanged. If the widget is loaded it is also passed to `window.CMPKit.updateConsent`, which sends the proof of consent to CMPKit. |
 | `handle.openSettings()` | Reopen the preferences panel. |
 
 ## App identifier
@@ -91,6 +91,12 @@ The banner is a script downloaded from `cmpkit.com` at every start and executed 
 - Do not keep secrets or tokens in the WebView (`localStorage`, globals), and do not expose sensitive native plugins to pages that load the widget.
 - Subresource Integrity cannot be pinned because the widget file changes between releases.
 - Keep `server.allowNavigation` in `capacitor.config` as narrow as possible.
+
+## Proof of consent
+
+CMPKit stores its server-side proof of consent when the **widget** saves a choice (`POST /api/consent/save`). `setConsent()` forwards the choice to the widget when it is loaded, so the proof is recorded. **Without the widget** (`showBanner: false`, or the script failed to load) the choice is stored only on the device: nothing is sent to CMPKit and there is no server-side proof of consent. If you need that proof, keep the widget loaded.
+
+When the account is in safe mode (free plan over its visitor quota), the widget ignores new choices: the plugin still keeps the choice on the device, but no proof is recorded.
 
 ## Known limits
 

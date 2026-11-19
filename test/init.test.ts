@@ -6,18 +6,31 @@ import { init } from '../src/index.ts'
 const KEY = consentStorageKey('test-key')
 const accepted = normalizeConsent({ analytics: true })
 
-type Fake = { events: string[], local: Map<string, string>, widget: { cb?: (c: unknown) => void } | null }
+type FakeWidget = { cb?: (c: unknown) => void, updates: unknown[], updateError?: Error }
+type Fake = { events: string[], local: Map<string, string>, widget: FakeWidget | null }
 
 function setup({ withWidget = true, scriptFails = false }: { withWidget?: boolean, scriptFails?: boolean } = {}): Fake {
   const events: string[] = []
   const local = new Map<string, string>()
-  const widget: { cb?: (c: unknown) => void } = {}
+  const widget: FakeWidget = { updates: [] }
+  const fakeLocal = local
   const g = globalThis as any
   g.localStorage = {
     getItem: (k: string) => local.get(k) ?? null,
     setItem: (k: string, v: string) => { local.set(k, v) },
   }
-  g.window = withWidget ? { CMPKit: { onConsentChange: (cb: any) => { widget.cb = cb; return () => {} }, openSettings() {}, getConsent() {} } } : {}
+  g.window = withWidget ? { CMPKit: {
+    onConsentChange: (cb: any) => { widget.cb = cb; return () => {} },
+    openSettings() {},
+    getConsent() {},
+    // Mirrors the real widget: persists its own copy and notifies subscribers synchronously, with no dedupe.
+    updateConsent: (c: unknown) => {
+      widget.updates.push(c)
+      if (widget.updateError) throw widget.updateError
+      fakeLocal.set(KEY, 'written-by-widget')
+      widget.cb?.({ ...(c as object) })
+    },
+  } } : {}
   g.document = {
     querySelector: () => null,
     createElement: () => ({ setAttribute() {} }),
@@ -175,4 +188,62 @@ test('setConsent logs errors from storage and callbacks and never throws', async
     console.error = original
   }
   assert.ok(errors.length >= 3)
+})
+
+test('setConsent with the widget loaded calls updateConsent once and notifies once', async () => {
+  const fake = setup()
+  const storage = memoryStorage()
+  const seen: unknown[] = []
+  const changes: unknown[] = []
+  const handle = await init({ ...base, storage, onConsent: (c) => { seen.push(c?.analytics ?? null) } })
+  handle.onChange((c) => changes.push(c?.analytics))
+  await handle.setConsent({ analytics: true })
+  assert.equal(fake.widget!.updates.length, 1)
+  assert.deepEqual(fake.widget!.updates[0], { necessary: true, functional: false, analytics: true, marketing: false })
+  assert.deepEqual(seen, [null, true])
+  assert.deepEqual(changes, [true])
+  assert.equal(JSON.parse(storage.data.get(KEY)!).consent.analytics, true)
+  // the widget wrote the localStorage copy: the plugin does not overwrite it
+  assert.equal(fake.local.get(KEY), 'written-by-widget')
+  // identical choice: no second updateConsent
+  await handle.setConsent({ analytics: true })
+  assert.equal(fake.widget!.updates.length, 1)
+})
+
+test('setConsent without a widget makes no widget call and no error', async () => {
+  const fake = setup({ withWidget: false })
+  const errors: unknown[] = []
+  const original = console.error
+  console.error = (...args: unknown[]) => { errors.push(args) }
+  try {
+    const handle = await init({ ...base, showBanner: false, storage: memoryStorage() })
+    await handle.setConsent({ analytics: true })
+    assert.equal(handle.hasConsent('analytics'), true)
+    assert.ok(fake.local.get(KEY), 'plugin writes the localStorage copy itself')
+  } finally {
+    console.error = original
+  }
+  assert.equal(errors.length, 0)
+})
+
+test('a widget that throws in updateConsent is logged and absorbed, the choice is still saved', async () => {
+  const fake = setup()
+  fake.widget!.updateError = new Error('widget boom')
+  const storage = memoryStorage()
+  const seen: unknown[] = []
+  const errors: string[] = []
+  const original = console.error
+  console.error = (...args: unknown[]) => { errors.push(String(args[0])) }
+  try {
+    const handle = await init({ ...base, storage, onConsent: (c) => { seen.push(c?.analytics ?? null) } })
+    await handle.setConsent({ analytics: true })
+    assert.equal(handle.hasConsent('analytics'), true)
+  } finally {
+    console.error = original
+  }
+  assert.deepEqual(errors, ['[capacitor-cmpkit] widget.updateConsent failed:'])
+  assert.deepEqual(seen, [null, true])
+  assert.equal(JSON.parse(storage.data.get(KEY)!).consent.analytics, true)
+  assert.notEqual(fake.local.get(KEY), 'written-by-widget')
+  assert.ok(fake.local.get(KEY), 'plugin falls back to writing the localStorage copy')
 })

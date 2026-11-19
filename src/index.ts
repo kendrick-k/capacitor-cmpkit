@@ -6,7 +6,7 @@ import {
 } from './consent.ts'
 import { resolveAppId } from './app-id.ts'
 import { injectWidget, type WidgetOptions } from './loader.ts'
-import { getWidget, waitForWidget } from './widget.ts'
+import { getWidget, waitForWidget, type Widget } from './widget.ts'
 
 export type { Consent, ConsentCategory } from './consent.ts'
 export { DEFAULT_CONSENT } from './consent.ts'
@@ -46,6 +46,9 @@ export interface CmpkitHandle {
    * Record a choice yourself (own banner, `showBanner: false`). Missing categories keep their current value.
    * Normalized, persisted natively and in the WebView storage, then listeners and `onConsent` are called.
    * Does nothing if the choice is identical to the current one. Errors are logged, never thrown.
+   *
+   * When the widget is loaded, the choice is also passed to `window.CMPKit.updateConsent`, which sends the
+   * proof of consent to CMPKit. Without the widget (`showBanner: false` or load failure) nothing is sent to CMPKit.
    */
   setConsent(consent: Partial<Consent>): Promise<void>
   /** Reopen the preferences panel. */
@@ -89,11 +92,25 @@ export async function init(options: InitOptions): Promise<CmpkitHandle> {
   }
   await emit(current)
 
+  let readyWidget: Widget | undefined
+
   // Shared by the widget callback and `setConsent`: dedupe, persist, then notify. Never throws.
-  const apply = async (next: Consent, { writeLocal }: { writeLocal: boolean }) => {
+  const apply = async (next: Consent, { fromUser }: { fromUser: boolean }) => {
     try {
       if (sameConsent(current, next)) return
       current = next
+      // `current` is already updated, so the `onConsentChange` the widget fires synchronously
+      // inside `updateConsent` is dropped by the check above: no double notification.
+      let widgetSaved = false
+      if (fromUser && readyWidget && typeof readyWidget.updateConsent === 'function') {
+        try {
+          readyWidget.updateConsent(next)
+          widgetSaved = true
+        } catch (error) {
+          console.error(`${log} widget.updateConsent failed:`, error)
+        }
+      }
+      const writeLocal = fromUser && !widgetSaved // the widget writes its own localStorage copy
       const record = buildConsentRecord(next)
       try {
         await storage.set(storageKey, JSON.stringify(record))
@@ -123,8 +140,8 @@ export async function init(options: InitOptions): Promise<CmpkitHandle> {
       if (!widget) {
         console.warn(`${log} widget not ready: consent changes will not be persisted`)
       } else {
-        // The widget already writes its own localStorage copy.
-        widget.onConsentChange((raw) => apply(normalizeConsent(raw), { writeLocal: false }))
+        readyWidget = widget
+        widget.onConsentChange((raw) => apply(normalizeConsent(raw), { fromUser: false }))
       }
     }
   }
@@ -133,7 +150,7 @@ export async function init(options: InitOptions): Promise<CmpkitHandle> {
     getConsent: () => (current ? { ...current } : null),
     hasConsent: (category) => hasConsent(current, category),
     onChange(cb) { listeners.add(cb); return () => { listeners.delete(cb) } },
-    setConsent: (consent) => apply(normalizeConsent({ ...(current ?? {}), ...consent }), { writeLocal: true }),
+    setConsent: (consent) => apply(normalizeConsent({ ...(current ?? {}), ...consent }), { fromUser: true }),
     openSettings: async () => { await getWidget()?.openSettings() },
   }
 }

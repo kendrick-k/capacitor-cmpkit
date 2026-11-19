@@ -2,6 +2,8 @@ export type Widget = {
   getConsent(): unknown
   onConsentChange(cb: (c: unknown) => void): () => void
   openSettings(): unknown
+  /** Optional: absent on very old widget versions. */
+  updateConsent?(consent: unknown): unknown
 }
 
 export const getWidget = (): Widget | undefined => {
