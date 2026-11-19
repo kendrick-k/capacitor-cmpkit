@@ -66,6 +66,7 @@ The ATT system prompt is **not** a consent banner and does not replace one: Appl
 | `handle.getConsent()` | Current choice or `null`. |
 | `handle.hasConsent(category)` | `necessary`, `functional`, `analytics`, `marketing`. |
 | `handle.onChange(cb)` | Subscribe; returns an unsubscribe function. |
+| `handle.setConsent(partial)` | Record a choice yourself (own banner). Missing categories keep their value; persisted, listeners and `onConsent` notified; no-op if unchanged. |
 | `handle.openSettings()` | Reopen the preferences panel. |
 
 ## App identifier
@@ -85,7 +86,7 @@ The allow-list needs a **CMPKit server version that supports it**. An older serv
 
 The banner is a script downloaded from `cmpkit.com` at every start and executed inside your app's WebView. It runs with the same privileges as your own web code, including access to every Capacitor plugin your app exposes to JavaScript. In practice:
 
-- Treat `cmpkit.com` (and any custom `scriptUrl`) as a trusted third party. If you do not want that, set `showBanner: false` and build your own banner on top of `getConsent()` / `updateConsent`-style logic: the plugin still restores and persists the choice.
+- Treat `cmpkit.com` (and any custom `scriptUrl`) as a trusted third party. If you do not want that, set `showBanner: false` and build your own banner: call `handle.setConsent({ analytics: true, ... })` when the user chooses. The plugin still restores and persists the choice natively.
 - Only load it over HTTPS and restrict your CSP, for example `script-src 'self' https://cmpkit.com` and `connect-src 'self' https://cmpkit.com`.
 - Do not keep secrets or tokens in the WebView (`localStorage`, globals), and do not expose sensitive native plugins to pages that load the widget.
 - Subresource Integrity cannot be pinned because the widget file changes between releases.
@@ -94,6 +95,7 @@ The banner is a script downloaded from `cmpkit.com` at every start and executed 
 ## Known limits
 
 - The banner is the web widget, so the app needs network access to load it. The stored choice is restored offline. If the widget does not become ready within `widgetReadyTimeoutMs` (default 5 s), the plugin logs `widget not ready: consent changes will not be persisted` and carries on.
+- If the widget script cannot load (offline, blocked), the plugin logs `widget failed to load: consent changes will not be persisted` and `init()` still resolves with the stored choice. Use `setConsent()` with your own UI if you need a fallback.
 - Errors thrown by your `onConsent` callback or `onChange` listeners are logged with `console.error` and never make `init()` fail.
 - Native SDK wiring is yours (see the table): the plugin tells you the choice, it does not start or stop third-party SDKs.
 - The key is public by design (it is also in every website `<script>` tag). See "App identifier" for what the allow-list does and does not guarantee.

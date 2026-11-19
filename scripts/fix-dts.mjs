@@ -2,8 +2,9 @@
 // then fail if any `.ts` specifier is left. `--check` only verifies.
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const dist = new URL('../dist/', import.meta.url).pathname
+const dist = fileURLToPath(new URL('../dist/', import.meta.url))
 const checkOnly = process.argv.includes('--check')
 const files = readdirSync(dist).filter((f) => f.endsWith('.d.ts'))
 if (!files.length) {

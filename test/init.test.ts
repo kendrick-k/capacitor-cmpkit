@@ -8,7 +8,7 @@ const accepted = normalizeConsent({ analytics: true })
 
 type Fake = { events: string[], local: Map<string, string>, widget: { cb?: (c: unknown) => void } | null }
 
-function setup({ withWidget = true }: { withWidget?: boolean } = {}): Fake {
+function setup({ withWidget = true, scriptFails = false }: { withWidget?: boolean, scriptFails?: boolean } = {}): Fake {
   const events: string[] = []
   const local = new Map<string, string>()
   const widget: { cb?: (c: unknown) => void } = {}
@@ -21,7 +21,7 @@ function setup({ withWidget = true }: { withWidget?: boolean } = {}): Fake {
   g.document = {
     querySelector: () => null,
     createElement: () => ({ setAttribute() {} }),
-    head: { appendChild: (el: any) => { events.push('inject'); queueMicrotask(() => el.onload()) } },
+    head: { appendChild: (el: any) => { events.push('inject'); queueMicrotask(() => (scriptFails ? el.onerror() : el.onload())) } },
   }
   return { events, local, widget: withWidget ? widget : null }
 }
@@ -95,6 +95,81 @@ test('errors in onConsent, listeners and storage never make init() or the widget
     const handle = await init({ ...base, storage, onConsent: () => { throw new Error('user bug') } })
     handle.onChange(() => { throw new Error('listener bug') })
     await (fake.widget!.cb as any)({ analytics: true })
+    assert.equal(handle.hasConsent('analytics'), true)
+  } finally {
+    console.error = original
+  }
+  assert.ok(errors.length >= 3)
+})
+
+test('a script that fails to load warns, skips the widget wait, and init still restores the choice', async () => {
+  const fake = setup({ scriptFails: true })
+  const storage = memoryStorage({ [KEY]: JSON.stringify(buildConsentRecord(accepted)) })
+  const seen: unknown[] = []
+  const warnings: string[] = []
+  const original = console.warn
+  console.warn = (...args: unknown[]) => { warnings.push(String(args[0])) }
+  const started = Date.now()
+  try {
+    const handle = await init({ ...base, widgetReadyTimeoutMs: 5000, storage, onConsent: (c) => { seen.push(c?.analytics) } })
+    assert.equal(handle.hasConsent('analytics'), true)
+  } finally {
+    console.warn = original
+  }
+  assert.ok(Date.now() - started < 1000, 'did not wait for the widget')
+  assert.deepEqual(seen, [true])
+  assert.deepEqual(warnings, ['[capacitor-cmpkit] widget failed to load: consent changes will not be persisted'])
+  assert.ok(fake.events.includes('inject'))
+})
+
+test('setConsent normalizes, persists natively and in localStorage, then notifies', async () => {
+  const fake = setup()
+  const storage = memoryStorage()
+  const seen: unknown[] = []
+  const handle = await init({ ...base, showBanner: false, storage, onConsent: (c) => { seen.push(c?.analytics ?? null) } })
+  const changes: unknown[] = []
+  handle.onChange((c) => changes.push(c?.marketing))
+  await handle.setConsent({ analytics: true, necessary: false } as any)
+  assert.deepEqual(handle.getConsent(), { necessary: true, functional: false, analytics: true, marketing: false })
+  for (const raw of [storage.data.get(KEY), fake.local.get(KEY)]) {
+    const stored = JSON.parse(raw!)
+    assert.equal(stored.version, 1)
+    assert.equal(stored.consent.analytics, true)
+    assert.ok(stored.updatedAt > 0)
+  }
+  assert.deepEqual(seen, [null, true])
+  assert.deepEqual(changes, [false])
+  // missing categories keep their value
+  await handle.setConsent({ marketing: true })
+  assert.deepEqual(handle.getConsent(), { necessary: true, functional: false, analytics: true, marketing: true })
+})
+
+test('setConsent with an identical choice does nothing', async () => {
+  setup()
+  const storage = memoryStorage({ [KEY]: JSON.stringify(buildConsentRecord(accepted)) })
+  let calls = 0
+  let writes = 0
+  const counting = { get: storage.get, set: async (k: string, v: string) => { writes++; await storage.set(k, v) } }
+  const handle = await init({ ...base, showBanner: false, storage: counting, onConsent: () => { calls++ } })
+  assert.equal(calls, 1) // startup call only
+  let listenerCalls = 0
+  handle.onChange(() => { listenerCalls++ })
+  await handle.setConsent({ analytics: true })
+  assert.equal(calls, 1)
+  assert.equal(listenerCalls, 0)
+  assert.equal(writes, 0)
+})
+
+test('setConsent logs errors from storage and callbacks and never throws', async () => {
+  setup()
+  const errors: unknown[] = []
+  const original = console.error
+  console.error = (...args: unknown[]) => { errors.push(args) }
+  try {
+    const storage = { get: async () => null, set: async () => { throw new Error('disk full') } }
+    const handle = await init({ ...base, showBanner: false, storage, onConsent: () => { throw new Error('user bug') } })
+    handle.onChange(() => { throw new Error('listener bug') })
+    await handle.setConsent({ analytics: true })
     assert.equal(handle.hasConsent('analytics'), true)
   } finally {
     console.error = original
