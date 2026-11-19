@@ -44,6 +44,14 @@ cmp.hasConsent('analytics') // false until the user agrees
 cmp.openSettings()          // reopen the preferences panel (settings screen link)
 ```
 
+## Vendors loaded by CMPKit
+
+The widget injects the vendors configured on your CMPKit project (Google Tag Manager and the managed vendors) only after the visitor consents, exactly as on a website. For this the plugin sends the same attributes as the dashboard install snippet: `data-datalayer="true"`, `data-auto-inject-vendors="true"` and `data-datalayer-forward-all="false"`. Change them with the `dataLayer`, `autoInjectVendors` and `dataLayerForwardAll` options of `init()`.
+
+Verified on iOS with Google Tag Manager: the container stays deferred before any choice and after a refusal, and loads after acceptance, after an app restart with the stored choice, and after the WebView storage was purged. Managed vendors other than GTM were not tested in an app.
+
+These options only affect scripts that run inside the WebView. Native SDKs are not controlled by CMPKit (see below).
+
 ## Blocking at the source
 
 Disabling an SDK after it started is too late: it may already have sent data. Ship these native flags **off** and turn them on from `onConsent`:

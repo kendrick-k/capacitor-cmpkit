@@ -60,3 +60,14 @@ test('records follow the widget rules: dated, recent, version 1', () => {
   // an undated refusal grants nothing, so it is kept
   assert.deepEqual(parseConsentRecord(JSON.stringify({ analytics: false }), now)?.consent, normalizeConsent({}))
 })
+
+test('vendor attributes default to the dashboard snippet values and can be overridden', () => {
+  const d = buildScriptAttributes({ apiKey: 'k' })!
+  assert.equal(d['data-datalayer'], 'true')
+  assert.equal(d['data-auto-inject-vendors'], 'true')
+  assert.equal(d['data-datalayer-forward-all'], 'false')
+  const o = buildScriptAttributes({ apiKey: 'k', dataLayer: false, autoInjectVendors: false, dataLayerForwardAll: true })!
+  assert.equal(o['data-datalayer'], 'false')
+  assert.equal(o['data-auto-inject-vendors'], 'false')
+  assert.equal(o['data-datalayer-forward-all'], 'true')
+})
