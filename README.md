@@ -16,7 +16,7 @@ No telemetry. The only network calls are the ones CMPKit already makes (widget s
 ## Install
 
 ```bash
-npm i capacitor-cmpkit @capacitor/preferences
+npm i capacitor-cmpkit @capacitor/preferences @capacitor/app
 npx cap sync
 ```
 
@@ -59,6 +59,7 @@ The ATT system prompt is **not** a consent banner and does not replace one: Appl
 | `options.apiKey` | Public site key (required). |
 | `options.onConsent(consent \| null)` | Called at startup and on every change. |
 | `options.showBanner` | `false` to only restore the stored choice. Default `true`. |
+| `options.appId` | Override the detected app identifier. |
 | `options.scriptUrl`, `locale`, `theme` | Widget overrides. |
 | `options.storage` | Custom storage (tests). |
 | `handle.getConsent()` | Current choice or `null`. |
@@ -66,11 +67,24 @@ The ATT system prompt is **not** a consent banner and does not replace one: Appl
 | `handle.onChange(cb)` | Subscribe; returns an unsubscribe function. |
 | `handle.openSettings()` | Reopen the preferences panel. |
 
+## App identifier
+
+The plugin reads the running app's identifier (iOS bundle ID / Android `applicationId`, via `@capacitor/app` `getInfo().id`) and sends it to CMPKit with the widget config and consent requests (`X-CMPKit-App-Id` header). Pass `appId` to `init()` to override it.
+
+In the CMPKit project settings, a project can list its allowed app identifiers:
+
+- **List configured**: requests from a Capacitor WebView origin (`capacitor://localhost`, `ionic://localhost`, `https://localhost`) are accepted only if the identifier is in the list. A missing or unlisted identifier is refused with `403`.
+- **No list configured**: previous behavior, any app is accepted (CMPKit logs a warning). Existing projects keep working.
+
+> **This is not a strong security guarantee.** The identifier is declared by the client and can be copied or forged by anyone who can send HTTP requests. It prevents accidental use of your key in another app and keeps your project tidy; it does not stop a determined attacker. Do not rely on it to protect anything sensitive.
+
+Requires a CMPKit server and widget version that support app identifiers (the widget is loaded from `cmpkit.com`, so it updates itself).
+
 ## Known limits
 
 - The banner is the web widget, so the app needs network access at least once to load it. The stored choice works offline afterwards.
 - Native SDK wiring is yours (see the table): the plugin tells you the choice, it does not start or stop third-party SDKs.
-- The key is public by design (it is also in every website `<script>` tag). Allowed app identifiers are enforced by CMPKit.
+- The key is public by design (it is also in every website `<script>` tag). See "App identifier" for what the allow-list does and does not guarantee.
 
 ## Development
 

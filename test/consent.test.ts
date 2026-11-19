@@ -33,3 +33,9 @@ test('script attributes need a key and default to cmpkit.com', () => {
   assert.equal(a.src, 'https://cmpkit.com/widget.js')
   assert.equal(a['data-locale'], 'fr')
 })
+
+test('script attributes carry the app id when present', () => {
+  assert.equal(buildScriptAttributes({ apiKey: 'k' })!['data-app-id'], undefined)
+  assert.equal(buildScriptAttributes({ apiKey: 'k', appId: ' com.example.app ' })!['data-app-id'], 'com.example.app')
+  assert.equal(buildScriptAttributes({ apiKey: 'k', appId: '  ' })!['data-app-id'], undefined)
+})

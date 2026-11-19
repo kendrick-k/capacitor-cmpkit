@@ -1,8 +1,10 @@
+import { App } from '@capacitor/app'
 import { Preferences } from '@capacitor/preferences'
 import {
   type Consent, type ConsentCategory, DEFAULT_CONSENT, hasConsent, normalizeConsent,
   parseStoredConsent, sameConsent,
 } from './consent.ts'
+import { resolveAppId } from './app-id.ts'
 import { injectWidget, type WidgetOptions } from './loader.ts'
 
 export type { Consent, ConsentCategory } from './consent.ts'
@@ -71,7 +73,8 @@ export async function init(options: InitOptions): Promise<CmpkitHandle> {
   await emit(current)
 
   if (options.showBanner !== false) {
-    await injectWidget(options)
+    const appId = await resolveAppId(options.appId, () => App.getInfo())
+    await injectWidget({ ...options, appId })
     const w = widget()
     w?.onConsentChange(async (raw) => {
       const next = normalizeConsent(raw)

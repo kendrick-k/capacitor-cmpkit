@@ -7,6 +7,8 @@ export interface WidgetOptions {
   locale?: string
   /** Force the widget theme. */
   theme?: string
+  /** App identifier (iOS bundle ID / Android applicationId), sent to CMPKit as `data-app-id`. */
+  appId?: string
 }
 
 export const DEFAULT_SCRIPT_URL = 'https://cmpkit.com/widget.js'
@@ -22,6 +24,7 @@ export function buildScriptAttributes(options: WidgetOptions): Record<string, st
   }
   if (options.locale?.trim()) attrs['data-locale'] = options.locale.trim()
   if (options.theme?.trim()) attrs['data-theme'] = options.theme.trim()
+  if (options.appId?.trim()) attrs['data-app-id'] = options.appId.trim()
   return attrs
 }
 
