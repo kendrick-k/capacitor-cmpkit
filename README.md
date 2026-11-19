@@ -13,6 +13,11 @@
 
 No telemetry. The only network calls are the ones CMPKit already makes (widget script, config, consent save).
 
+## Platform support
+
+- **iOS: verified** in the simulator (first launch, offline with a stored choice, WebView storage purge).
+- **Android: not verified yet.** The code uses only Capacitor APIs that exist on Android (`@capacitor/preferences`, `@capacitor/app`), so it should work, but it has not been run on an Android device or emulator. On the server side, the Android WebView origin (`https://localhost`) is handled by the same allowed-app-id check as iOS.
+
 ## Install
 
 ```bash
