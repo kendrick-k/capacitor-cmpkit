@@ -3,12 +3,12 @@
 [![npm](https://img.shields.io/npm/v/capacitor-cmpkit)](https://www.npmjs.com/package/capacitor-cmpkit)
 [![CI](https://github.com/kendrick-k/capacitor-cmpkit/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kendrick-k/capacitor-cmpkit/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Capacitor](https://img.shields.io/badge/Capacitor-6%2B-119EFF)](https://capacitorjs.com)
+[![Capacitor](https://img.shields.io/badge/Capacitor-8%2B-119EFF)](https://capacitorjs.com)
 
 [CMPKit](https://cmpkit.com) consent management for Capacitor apps.
 
 - Shows the CMPKit banner in the WebView.
-- Stores the choice **natively** (`@capacitor/preferences`), so iOS purging WebView storage never resets it.
+- Stores the choice **natively** (`@capacitor/preferences`), so iOS purging WebView storage never resets it. It is saved under `cmpkit_consent_<scope>` (`<scope>` is your API key, lowercased and reduced to `a-z0-9_-`), in the same record format as the widget: `{"consent":{...},"version":1,"updatedAt":<ms>}`. At startup the plugin copies it back into the WebView `localStorage` under the same key. As in the widget, a choice older than 180 days, dated in the future, or without a date (unless it refuses everything) is ignored and the banner is shown again.
 - Gives you the choice **before** anything else starts, so native SDKs (Firebase, AdMob, Adjust...) stay off until the user agrees.
 
 No telemetry. The only network calls are the ones CMPKit already makes (widget script, config, consent save).
@@ -58,6 +58,7 @@ The ATT system prompt is **not** a consent banner and does not replace one: Appl
 | `init(options)` | Restore the stored choice, call `onConsent`, load the banner. |
 | `options.apiKey` | Public site key (required). |
 | `options.onConsent(consent \| null)` | Called at startup and on every change. |
+| `options.widgetReadyTimeoutMs` | Wait for the widget after its script loads. Default `5000`. |
 | `options.showBanner` | `false` to only restore the stored choice. Default `true`. |
 | `options.appId` | Override the detected app identifier. |
 | `options.scriptUrl`, `locale`, `theme` | Widget overrides. |
@@ -78,18 +79,29 @@ In the CMPKit project settings, a project can list its allowed app identifiers:
 
 > **This is not a strong security guarantee.** The identifier is declared by the client and can be copied or forged by anyone who can send HTTP requests. It prevents accidental use of your key in another app and keeps your project tidy; it does not stop a determined attacker. Do not rely on it to protect anything sensitive.
 
-Requires a CMPKit server and widget version that support app identifiers (the widget is loaded from `cmpkit.com`, so it updates itself).
+The allow-list needs a **CMPKit server version that supports it**. An older server ignores the identifier and keeps accepting any app. The widget is loaded from `cmpkit.com`, so it is always current, but the server side is deployed separately: check with CMPKit that your account runs a version with app identifiers before relying on it.
+
+## Security: a remote widget in the WebView
+
+The banner is a script downloaded from `cmpkit.com` at every start and executed inside your app's WebView. It runs with the same privileges as your own web code, including access to every Capacitor plugin your app exposes to JavaScript. In practice:
+
+- Treat `cmpkit.com` (and any custom `scriptUrl`) as a trusted third party. If you do not want that, set `showBanner: false` and build your own banner on top of `getConsent()` / `updateConsent`-style logic: the plugin still restores and persists the choice.
+- Only load it over HTTPS and restrict your CSP, for example `script-src 'self' https://cmpkit.com` and `connect-src 'self' https://cmpkit.com`.
+- Do not keep secrets or tokens in the WebView (`localStorage`, globals), and do not expose sensitive native plugins to pages that load the widget.
+- Subresource Integrity cannot be pinned because the widget file changes between releases.
+- Keep `server.allowNavigation` in `capacitor.config` as narrow as possible.
 
 ## Known limits
 
-- The banner is the web widget, so the app needs network access at least once to load it. The stored choice works offline afterwards.
+- The banner is the web widget, so the app needs network access to load it. The stored choice is restored offline. If the widget does not become ready within `widgetReadyTimeoutMs` (default 5 s), the plugin logs `widget not ready: consent changes will not be persisted` and carries on.
+- Errors thrown by your `onConsent` callback or `onChange` listeners are logged with `console.error` and never make `init()` fail.
 - Native SDK wiring is yours (see the table): the plugin tells you the choice, it does not start or stop third-party SDKs.
 - The key is public by design (it is also in every website `<script>` tag). See "App identifier" for what the allow-list does and does not guarantee.
 
 ## Development
 
 ```bash
-npm ci && npm run typecheck && npm test && npm run prepack
+npm ci && npm run typecheck && npm test && npm run prepack   # prepack also checks that dist/*.d.ts have no `.ts` imports
 ```
 
 ## License

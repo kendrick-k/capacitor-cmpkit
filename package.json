@@ -33,15 +33,16 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/fix-dts.mjs",
     "prepack": "npm run build",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test test/*.test.ts"
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "check:dist": "node scripts/fix-dts.mjs --check"
   },
   "peerDependencies": {
-    "@capacitor/core": ">=6.0.0",
-    "@capacitor/preferences": ">=6.0.0",
-    "@capacitor/app": ">=6.0.0"
+    "@capacitor/core": ">=8.0.0",
+    "@capacitor/preferences": ">=8.0.0",
+    "@capacitor/app": ">=8.0.0"
   },
   "devDependencies": {
     "@capacitor/core": "^8.0.0",
